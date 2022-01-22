@@ -4,7 +4,7 @@ use serde::{Deserialize, Deserializer};
 
 use svg::Document;
 use svg::Node;
-use svg::node::element::Polygon;
+use svg::node::element::{Polygon, Rectangle};
 
 #[derive(Deserialize, Debug)]
 pub struct World {
@@ -220,6 +220,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let mut document = Document::new()
         .set("viewBox", (0, 0, max_cell_x * 300, max_cell_y * 300));
+
+    // background
+    document.append(Rectangle::new()
+        .set("x", 0)
+        .set("y", 0)
+        .set("width", max_cell_x * 300)
+        .set("height", max_cell_y * 300)
+        .set("fill", "white"));
 
     xml.render(&mut document);
 
