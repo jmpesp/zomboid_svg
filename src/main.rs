@@ -45,12 +45,13 @@ impl Cell {
 #[derive(Deserialize, Debug)]
 pub struct Feature {
     pub geometry: Geometry,
-    pub property: Option<Vec<Property>>,
+    #[serde(rename = "properties")]
+    pub properties: Option<Properties>,
 }
 
 impl Feature {
     pub fn render(&self, document: &mut Document, bottom_left: &Point) {
-        self.geometry.render(document, bottom_left)
+        self.geometry.render(document, bottom_left, &self.properties)
     }
 }
 
@@ -92,9 +93,9 @@ pub struct Geometry {
 }
 
 impl Geometry {
-    pub fn render(&self, document: &mut Document, bottom_left: &Point) {
+    pub fn render(&self, document: &mut Document, bottom_left: &Point, properties: &Option<Properties>) {
         for coordinate in &self.coordinates {
-            coordinate.render(document, bottom_left)
+            coordinate.render(document, bottom_left, properties)
         }
     }
 }
@@ -105,7 +106,7 @@ pub struct Coordinates {
 }
 
 impl Coordinates {
-    pub fn render(&self, document: &mut Document, bottom_left: &Point) {
+    pub fn render(&self, document: &mut Document, bottom_left: &Point, properties: &Option<Properties>) {
         let points: String = self.point
             .iter()
             .map(|p| {
@@ -115,11 +116,28 @@ impl Coordinates {
             .collect::<Vec<String>>()
             .join(" ");
 
-        let polygon = Polygon::new()
-            .set("fill", "none")
-            .set("stroke", "black")
-            .set("stroke-width", 2)
-            .set("points", points);
+        let mut fill = "none";
+        let mut stroke: Option<String> = Some("black".into());
+
+        if let Some(properties) = properties {
+            for property in &properties.property {
+                if property.name == "water" {
+                    fill = "blue";
+                    stroke = None;
+                }
+            }
+        }
+
+        let mut polygon = Polygon::new();
+
+        polygon.assign("fill", fill);
+
+        if let Some(stroke) = stroke {
+            polygon.assign("stroke", stroke);
+            polygon.assign("stroke-width", 2);
+        }
+
+        polygon.assign("points", points);
 
         document.append(polygon);
     }
@@ -138,56 +156,12 @@ impl Point {
             y: self.y + p.y,
         }
     }
-
-    pub fn line_to(&self, p: &Point) -> Point {
-        Point {
-            x: p.x - self.x,
-            y: p.y - self.y,
-        }
-    }
 }
 
-#[test]
-fn test_coordinate_stuff() {
-    // refer to first feature in worldmap.xml, which is a box:
-    //
-    // <coordinates>
-    //  <point x="300" y="0"/>
-    //  <point x="300" y="300"/>
-    //  <point x="0" y="300"/>
-    //  <point x="0" y="0"/>
-    // </coordinates>
-    //
-    // make sure the Point functions make sense for svg
-
-    // cell has bottom left
-    let start = Point { x: 0, y: 0 };
-
-    // svg starts with "move_to" - this corresponds to the first point in the
-    // coordinates list
-    let move_to = start.add(&Point { x: 300, y: 0 });
-    assert_eq!(move_to, Point { x: 300, y: 0 });
-
-    // then does line_by. so if I want to move to 300, 300,
-    // it should do a line_by of 0, 300
-    let line_by = move_to.line_to(&Point { x: 300, y: 300 });
-    assert_eq!(line_by, Point { x: 0, y: 300 });
-
-    // then I end up at point
-    let point = Point { x: 300, y: 300 };
-    assert_eq!(move_to.add(&line_by), point);
-
-    // then, go to next
-    let line_by = point.line_to(&Point { x: 0, y: 300 });
-    assert_eq!(line_by, Point { x: -300, y: 0 });
-    let point = Point { x: 0, y: 300 };
-
-    // then next
-    let line_by = point.line_to(&Point { x: 0, y: 0 });
-    assert_eq!(line_by, Point { x: 0, y: -300 });
-    let point = Point { x: 0, y: 0 };
-
-    // but this doesn't actually draw a box - connect to the first point again!
+#[derive(Deserialize, Debug)]
+pub struct Properties {
+    #[serde(rename = "property", default)]
+    pub property: Vec<Property>,
 }
 
 #[derive(Deserialize, Debug)]
