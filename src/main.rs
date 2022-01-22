@@ -162,15 +162,13 @@ impl Coordinates {
 
         polygon.assign("points", points);
 
-        svg_layers.get_layer(layer_key).append(polygon);
+        svg_layers.add_to_layer(layer_key, polygon.into());
     }
 
     pub fn render_point(&self, svg_layers: &mut SVGLayers, bottom_left: &Point, properties: &Option<Properties>) {
         assert_eq!(self.point.len(), 1);
         let point = &self.point[0];
         let adjusted_point = bottom_left.add(&point);
-
-        let layer = svg_layers.get_layer("text".into());
 
         if let Some(properties) = properties {
             for property in &properties.property {
@@ -182,7 +180,8 @@ impl Coordinates {
                     text.assign("font-size", "64");
                     text.assign("fill", "blue");
                     text.append(svg::node::Text::new(property.value.clone()));
-                    layer.append(text);
+
+                    svg_layers.add_to_layer("text".into(), text.into());
                 }
             }
         }
@@ -222,7 +221,6 @@ pub struct SVGLayers {
     min_y: i32,
     max_y: i32,
 
-    pub background: Document,
     pub layers: BTreeMap<String, Document>,
 }
 
@@ -233,17 +231,20 @@ impl SVGLayers {
             min_y,
             max_x,
             max_y,
-            background: Document::new()
-                .set("viewBox", (min_x, min_y, max_x, max_y)),
             layers: BTreeMap::default(),
         }
     }
 
-    pub fn get_layer(&mut self, key: String) -> &mut Document {
+    fn get_layer(&mut self, key: String) -> &mut Document {
         self.layers.entry(key).or_insert_with(|| {
             Document::new()
                 .set("viewBox", (self.min_x, self.min_y, self.max_x, self.max_y))
         })
+    }
+
+    pub fn add_to_layer(&mut self, key: String, node: svg::node::element::Element) {
+        self.get_layer(key).append(node.clone());
+        self.get_layer("map".into()).append(node);
     }
 
     pub fn save(&self) {
@@ -280,14 +281,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         max_cell_x * 300, max_cell_y * 300,
     );
 
-    // background
-    let layer = svg_layers.get_layer("background".into());
-    layer.append(Rectangle::new()
-        .set("x", 0)
-        .set("y", 0)
-        .set("width", max_cell_x * 300)
-        .set("height", max_cell_y * 300)
-        .set("fill", "white"));
+    svg_layers.add_to_layer(
+        "background".into(),
+        Rectangle::new()
+            .set("x", 0)
+            .set("y", 0)
+            .set("width", max_cell_x * 300)
+            .set("height", max_cell_y * 300)
+            .set("fill", "white").into(),
+        );
 
     xml.render(&mut svg_layers);
 
