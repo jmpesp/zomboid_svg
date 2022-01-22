@@ -1,3 +1,4 @@
+use std::collections::BTreeMap;
 use std::str::FromStr;
 
 use serde::{Deserialize, Deserializer};
@@ -12,9 +13,9 @@ pub struct World {
 }
 
 impl World {
-    pub fn render(&self, document: &mut Document) {
+    pub fn render(&self, svg_layers: &mut SVGLayers) {
         for cell in &self.cell {
-            cell.render(document);
+            cell.render(svg_layers);
         }
     }
 }
@@ -35,9 +36,9 @@ impl Cell {
         }
     }
 
-    pub fn render(&self, document: &mut Document) {
+    pub fn render(&self, svg_layers: &mut SVGLayers) {
         for feature in &self.feature {
-            feature.render(document, &self.bottom_left())
+            feature.render(svg_layers, &self.bottom_left())
         }
     }
 }
@@ -50,8 +51,8 @@ pub struct Feature {
 }
 
 impl Feature {
-    pub fn render(&self, document: &mut Document, bottom_left: &Point) {
-        self.geometry.render(document, bottom_left, &self.properties)
+    pub fn render(&self, svg_layers: &mut SVGLayers, bottom_left: &Point) {
+        self.geometry.render(svg_layers, bottom_left, &self.properties)
     }
 }
 
@@ -93,16 +94,16 @@ pub struct Geometry {
 }
 
 impl Geometry {
-    pub fn render(&self, document: &mut Document, bottom_left: &Point, properties: &Option<Properties>) {
+    pub fn render(&self, svg_layers: &mut SVGLayers, bottom_left: &Point, properties: &Option<Properties>) {
         for coordinate in &self.coordinates {
             match self.geometry_type {
                 GeometryType::LineString => {
                 },
                 GeometryType::Polygon => {
-                    coordinate.render_polygon(document, bottom_left, properties)
+                    coordinate.render_polygon(svg_layers, bottom_left, properties)
                 },
                 GeometryType::Point => {
-                    coordinate.render_point(document, bottom_left, properties)
+                    coordinate.render_point(svg_layers, bottom_left, properties)
                 }
             }
         }
@@ -115,7 +116,7 @@ pub struct Coordinates {
 }
 
 impl Coordinates {
-    pub fn render_polygon(&self, document: &mut Document, bottom_left: &Point, properties: &Option<Properties>) {
+    pub fn render_polygon(&self, svg_layers: &mut SVGLayers, bottom_left: &Point, properties: &Option<Properties>) {
         let points: String = self.point
             .iter()
             .map(|p| {
@@ -127,12 +128,14 @@ impl Coordinates {
 
         let mut fill = "none";
         let mut stroke: Option<String> = Some("black".into());
+        let mut layer_key = "polygons".into();
 
         if let Some(properties) = properties {
             for property in &properties.property {
                 /*
                  */
                 if property.name == "water" {
+                    layer_key = "water".into();
                     fill = "blue";
                     stroke = None;
                 } else if property.name == "natural" && property.value == "wood" {
@@ -140,6 +143,7 @@ impl Coordinates {
                     stroke = None;
                 } else if property.name == "building" {
                     if property.value == "Medical" {
+                        layer_key = "medical".into();
                         fill = "red";
                         stroke = None;
                     }
@@ -158,13 +162,15 @@ impl Coordinates {
 
         polygon.assign("points", points);
 
-        document.append(polygon);
+        svg_layers.get_layer(layer_key).append(polygon);
     }
 
-    pub fn render_point(&self, document: &mut Document, bottom_left: &Point, properties: &Option<Properties>) {
+    pub fn render_point(&self, svg_layers: &mut SVGLayers, bottom_left: &Point, properties: &Option<Properties>) {
         assert_eq!(self.point.len(), 1);
         let point = &self.point[0];
         let adjusted_point = bottom_left.add(&point);
+
+        let layer = svg_layers.get_layer("text".into());
 
         if let Some(properties) = properties {
             for property in &properties.property {
@@ -177,7 +183,7 @@ impl Coordinates {
                     text.assign("font-size", "64");
                     text.assign("fill", "blue");
                     text.append(svg::node::Text::new(property.value.clone()));
-                    document.append(text);
+                    layer.append(text);
                 }
             }
         }
@@ -211,6 +217,43 @@ pub struct Property {
     pub value: String,
 }
 
+pub struct SVGLayers {
+    min_x: i32,
+    max_x: i32,
+    min_y: i32,
+    max_y: i32,
+
+    pub background: Document,
+    pub layers: BTreeMap<String, Document>,
+}
+
+impl SVGLayers {
+    pub fn new(min_x: i32, min_y: i32, max_x: i32, max_y: i32) -> Self {
+        Self {
+            min_x,
+            min_y,
+            max_x,
+            max_y,
+            background: Document::new()
+                .set("viewBox", (min_x, min_y, max_x, max_y)),
+            layers: BTreeMap::default(),
+        }
+    }
+
+    pub fn get_layer(&mut self, key: String) -> &mut Document {
+        self.layers.entry(key).or_insert_with(|| {
+            Document::new()
+                .set("viewBox", (self.min_x, self.min_y, self.max_x, self.max_y))
+        })
+    }
+
+    pub fn save(&self) {
+        for (key, layer) in &self.layers {
+            svg::save(format!("{}.svg", key), layer).unwrap();
+        }
+    }
+}
+
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let file_path = "/home/jwm/GOG Games/Project Zomboid/game/projectzomboid/media/maps/Muldraugh, KY/worldmap.xml";
     let file_str = std::fs::read_to_string(file_path)?;
@@ -233,20 +276,23 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("{} cells", xml.cell.len());
     println!("{} {} {} {}", min_cell_x, max_cell_x, min_cell_y, max_cell_y);
 
-    let mut document = Document::new()
-        .set("viewBox", (0, 0, max_cell_x * 300, max_cell_y * 300));
+    let mut svg_layers = SVGLayers::new(
+        min_cell_x * 300, min_cell_y * 300,
+        max_cell_x * 300, max_cell_y * 300,
+    );
 
     // background
-    document.append(Rectangle::new()
+    let layer = svg_layers.get_layer("background".into());
+    layer.append(Rectangle::new()
         .set("x", 0)
         .set("y", 0)
         .set("width", max_cell_x * 300)
         .set("height", max_cell_y * 300)
         .set("fill", "white"));
 
-    xml.render(&mut document);
+    xml.render(&mut svg_layers);
 
-    svg::save("map.svg", &document).unwrap();
+    svg_layers.save();
 
     Ok(())
 }
