@@ -175,7 +175,6 @@ impl Coordinates {
         if let Some(properties) = properties {
             for property in &properties.property {
                 if property.name == "name_en" {
-                    println!("{}", property.value);
                     let mut text = Text::new();
                     text.assign("x", adjusted_point.x);
                     text.assign("y", adjusted_point.y);
