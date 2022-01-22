@@ -7,3 +7,5 @@ edition = "2021"
 
 [dependencies]
 svg = "0.10"
+serde = { version = "1.0", features = [ "derive" ] }
+quick-xml = { version = "0.22", features = [ "serialize" ] }
