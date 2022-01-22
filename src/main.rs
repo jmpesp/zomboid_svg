@@ -4,7 +4,7 @@ use serde::{Deserialize, Deserializer};
 
 use svg::Document;
 use svg::Node;
-use svg::node::element::{Polygon, Rectangle};
+use svg::node::element::{Polygon, Rectangle, Text};
 
 #[derive(Deserialize, Debug)]
 pub struct World {
@@ -95,7 +95,16 @@ pub struct Geometry {
 impl Geometry {
     pub fn render(&self, document: &mut Document, bottom_left: &Point, properties: &Option<Properties>) {
         for coordinate in &self.coordinates {
-            coordinate.render(document, bottom_left, properties)
+            match self.geometry_type {
+                GeometryType::LineString => {
+                },
+                GeometryType::Polygon => {
+                    coordinate.render_polygon(document, bottom_left, properties)
+                },
+                GeometryType::Point => {
+                    coordinate.render_point(document, bottom_left, properties)
+                }
+            }
         }
     }
 }
@@ -106,7 +115,7 @@ pub struct Coordinates {
 }
 
 impl Coordinates {
-    pub fn render(&self, document: &mut Document, bottom_left: &Point, properties: &Option<Properties>) {
+    pub fn render_polygon(&self, document: &mut Document, bottom_left: &Point, properties: &Option<Properties>) {
         let points: String = self.point
             .iter()
             .map(|p| {
@@ -121,9 +130,19 @@ impl Coordinates {
 
         if let Some(properties) = properties {
             for property in &properties.property {
+                /*
+                 */
                 if property.name == "water" {
                     fill = "blue";
                     stroke = None;
+                } else if property.name == "natural" && property.value == "wood" {
+                    fill = "green";
+                    stroke = None;
+                } else if property.name == "building" {
+                    if property.value == "Medical" {
+                        fill = "red";
+                        stroke = None;
+                    }
                 }
             }
         }
@@ -140,6 +159,28 @@ impl Coordinates {
         polygon.assign("points", points);
 
         document.append(polygon);
+    }
+
+    pub fn render_point(&self, document: &mut Document, bottom_left: &Point, properties: &Option<Properties>) {
+        assert_eq!(self.point.len(), 1);
+        let point = &self.point[0];
+        let adjusted_point = bottom_left.add(&point);
+
+        if let Some(properties) = properties {
+            for property in &properties.property {
+                if property.name == "name_en" {
+                    println!("{}", property.value);
+                    let mut text = Text::new();
+                    text.assign("x", adjusted_point.x);
+                    text.assign("y", adjusted_point.y);
+                    text.assign("font-family", "Verdana");
+                    text.assign("font-size", "64");
+                    text.assign("fill", "blue");
+                    text.append(svg::node::Text::new(property.value.clone()));
+                    document.append(text);
+                }
+            }
+        }
     }
 }
 
